@@ -1,0 +1,2092 @@
+{
+  "info": {
+    "_postman_id": "6f1c2e8a-3b5d-4c7e-9a1f-2d4b6c8e0a13",
+    "name": "Aligaga Shop API",
+    "description": "All REST methods of the shop API plus JWT authentication and authorization tests.\n\nRun it: php artisan migrate:fresh --seed, php artisan serve, then open the collection and choose Run (Collection Runner). Run the folders in order: 00 Auth logs in and saves the tokens that the later requests use.\n\nAccounts from the seeder (password: password): admin@example.com (admin), test@example.com (user). A1 registers a fresh user every run.\n\nTokens: GET requests are sent without a token (guest). Category changes use {{adminToken}}, item and review changes use {{userToken}}.\nThe base URL is the collection variable baseUrl (default http://127.0.0.1:8000/api).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Runs after every request: every answer except 204 must be JSON.",
+          "if (pm.response.code !== 204) {",
+          "    pm.test('Content-Type is application/json', () => {",
+          "        pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+          "    });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000/api"
+    },
+    {
+      "key": "categoryId",
+      "value": ""
+    },
+    {
+      "key": "categoryName",
+      "value": ""
+    },
+    {
+      "key": "itemId",
+      "value": ""
+    },
+    {
+      "key": "reviewId",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "userEmail",
+      "value": ""
+    },
+    {
+      "key": "userToken",
+      "value": ""
+    },
+    {
+      "key": "userRefreshToken",
+      "value": ""
+    },
+    {
+      "key": "usedRefreshToken",
+      "value": ""
+    },
+    {
+      "key": "oldUserToken",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "otherUserToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "00 Auth (register, login, refresh)",
+      "item": [
+        {
+          "name": "A1 REGISTER a new user (tries to send role=admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "const claims = (token) => JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((token.split('.')[1].length + 3) % 4)));",
+                  "pm.test('the new user is an ordinary user, the sent role=admin is ignored', () => pm.expect(json.user.role).to.eql('user'));",
+                  "pm.test('returns an access token and a refresh token', () => {",
+                  "    pm.expect(json.token_type).to.eql('Bearer');",
+                  "    pm.expect(json.access_token.split('.')).to.have.lengthOf(3);",
+                  "    pm.expect(json.refresh_token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('the access token holds the user ID and role', () => {",
+                  "    const payload = claims(json.access_token);",
+                  "    pm.expect(payload.sub).to.eql(json.user.id);",
+                  "    pm.expect(payload.role).to.eql('user');",
+                  "});",
+                  "pm.collectionVariables.set('userId', json.user.id);",
+                  "pm.collectionVariables.set('userEmail', json.user.email);",
+                  "pm.collectionVariables.set('userToken', json.access_token);",
+                  "pm.collectionVariables.set('userRefreshToken', json.refresh_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman User\",\n  \"email\": \"postman{{$timestamp}}{{$randomInt}}@example.com\",\n  \"password\": \"password\",\n  \"password_confirmation\": \"password\",\n  \"role\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "A2 REGISTER with an e-mail that is taken (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 Unprocessable', () => pm.response.to.have.status(422));",
+                  "pm.test('the email error is returned', () => pm.expect(pm.response.json().errors).to.have.property('email'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Copy\",\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"password\",\n  \"password_confirmation\": \"password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "A3 LOGIN as admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const claims = (token) => JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((token.split('.')[1].length + 3) % 4)));",
+                  "const payload = claims(json.access_token);",
+                  "pm.test('the access token holds the admin role and a user ID', () => {",
+                  "    pm.expect(payload.role).to.eql('admin');",
+                  "    pm.expect(payload.sub).to.be.a('number');",
+                  "});",
+                  "pm.test('the access token is short-lived (15 min)', () => {",
+                  "    pm.expect(json.expires_in).to.eql(900);",
+                  "    pm.expect(payload.exp - payload.iat).to.eql(900);",
+                  "});",
+                  "pm.collectionVariables.set('adminToken', json.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "A4 LOGIN as another user (test@example.com)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const claims = (token) => JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((token.split('.')[1].length + 3) % 4)));",
+                  "pm.test('the access token holds the user role', () => pm.expect(claims(json.access_token).role).to.eql('user'));",
+                  "pm.collectionVariables.set('otherUserToken', json.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "A5 LOGIN with a wrong password (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));",
+                  "pm.test('no tokens are returned', () => pm.expect(pm.response.json()).to.not.have.property('access_token'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"wrong-password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "A6 REFRESH the tokens",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('returns a new access token and a new refresh token', () => {",
+                  "    pm.expect(json.access_token).to.not.eql(pm.collectionVariables.get('userToken'));",
+                  "    pm.expect(json.refresh_token).to.not.eql(pm.collectionVariables.get('userRefreshToken'));",
+                  "});",
+                  "pm.collectionVariables.set('usedRefreshToken', pm.collectionVariables.get('userRefreshToken'));",
+                  "pm.collectionVariables.set('oldUserToken', pm.collectionVariables.get('userToken'));",
+                  "pm.collectionVariables.set('userToken', json.access_token);",
+                  "pm.collectionVariables.set('userRefreshToken', json.refresh_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/refresh",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{userRefreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "A7 REFRESH again with the already used refresh token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized - a refresh token works only once', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/refresh",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{usedRefreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "A8 Old access token after refresh (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized - the access token of the replaced login stops working', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{oldUserToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "description": "LIST, CREATE, READ and UPDATE a category (DELETE is in the Delete folder, after its items are used).",
+      "item": [
+        {
+          "name": "01 LIST categories (search + pagination)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('at most 2 categories per page (per_page=2)', () => {",
+                  "    pm.expect(json.data.length).to.be.within(1, 2);",
+                  "    pm.expect(json.meta.per_page).to.eql(2);",
+                  "});",
+                  "pm.test('every name contains \"o\" (search filter)', () => {",
+                  "    json.data.forEach((category) => pm.expect(category.name.toLowerCase()).to.include('o'));",
+                  "});",
+                  "pm.test('hypermedia: pagination links and a self link on every category', () => {",
+                  "    pm.expect(json.links).to.have.all.keys('first', 'last', 'prev', 'next');",
+                  "    json.data.forEach((category) => pm.expect(category._links.self.href).to.match(new RegExp('/api/categories/' + category.id + '$')));",
+                  "});",
+                  "if (json.links.next) {",
+                  "    pm.sendRequest(json.links.next, (error, response) => {",
+                  "        pm.test('following links.next opens page 2', () => pm.expect(response.json().meta.current_page).to.eql(2));",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/categories?search=o&per_page=2",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "02 CREATE category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Location header points to the new category', () => {",
+                  "    pm.expect(pm.response.headers.get('Location')).to.eql(json.data._links.self.href);",
+                  "});",
+                  "pm.test('the category has the sent fields and no items yet', () => {",
+                  "    pm.expect(json.data.name).to.match(/^Garden \\d+$/);",
+                  "    pm.expect(json.data.description).to.eql('Tools, plants and decor for gardens and balconies.');",
+                  "    pm.expect(json.data.items_count).to.eql(0);",
+                  "});",
+                  "pm.collectionVariables.set('categoryId', json.data.id);",
+                  "pm.collectionVariables.set('categoryName', json.data.name);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/categories",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Garden {{$timestamp}}\",\n  \"description\": \"Tools, plants and decor for gardens and balconies.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "03 READ category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('returns the created category', () => {",
+                  "    pm.expect(json.data.id).to.eql(Number(pm.collectionVariables.get('categoryId')));",
+                  "});",
+                  "pm.test('hypermedia: self, update, delete and items links', () => {",
+                  "    pm.expect(json.data._links).to.have.all.keys('self', 'update', 'delete', 'items');",
+                  "    pm.expect(json.data._links.delete.method).to.eql('DELETE');",
+                  "    pm.expect(json.data._links.items.href).to.include('/api/items?category_id=' + json.data.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/categories/{{categoryId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "04 UPDATE category (PUT)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('name and description are updated', () => {",
+                  "    pm.expect(json.data.name).to.eql(pm.collectionVariables.get('categoryName') + ' & Patio');",
+                  "    pm.expect(json.data.description).to.eql('Everything for outdoor living.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/categories/{{categoryId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{categoryName}} & Patio\",\n  \"description\": \"Everything for outdoor living.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Items",
+      "description": "LIST, CREATE, READ and UPDATE an item. The new item goes into the category created in 02.",
+      "item": [
+        {
+          "name": "05 LIST items (filter by category and price)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('only items of category 1 that cost 10-30', () => {",
+                  "    pm.expect(json.data.length).to.be.above(0);",
+                  "    json.data.forEach((item) => {",
+                  "        pm.expect(item.category_id).to.eql(1);",
+                  "        pm.expect(item.price).to.be.within(10, 30);",
+                  "    });",
+                  "});",
+                  "pm.test('at most 5 items per page (per_page=5)', () => pm.expect(json.meta.per_page).to.eql(5));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items?category_id=1&min_price=10&max_price=30&per_page=5",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "06 CREATE item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Location header points to the new item', () => {",
+                  "    pm.expect(pm.response.headers.get('Location')).to.eql(json.data._links.self.href);",
+                  "});",
+                  "pm.test('the item belongs to the new category and has no reviews yet', () => {",
+                  "    pm.expect(json.data.category_id).to.eql(Number(pm.collectionVariables.get('categoryId')));",
+                  "    pm.expect(json.data.price).to.eql(24.9);",
+                  "    pm.expect(json.data.reviews_count).to.eql(0);",
+                  "    pm.expect(json.data.average_rating).to.be.null;",
+                  "});",
+                  "pm.test('the author is the logged-in user (from the token)', () => pm.expect(json.data.user_id).to.eql(Number(pm.collectionVariables.get('userId'))));",
+                  "pm.collectionVariables.set('itemId', json.data.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category_id\": {{categoryId}},\n  \"name\": \"Expandable Garden Hose 15 m\",\n  \"description\": \"Lightweight hose that stretches to 15 m, with a 7-mode spray nozzle.\",\n  \"price\": 24.90,\n  \"stock\": 40\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "07 READ item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const categoryId = pm.collectionVariables.get('categoryId');",
+                  "pm.test('hypermedia: links to its category and to its reviews', () => {",
+                  "    pm.expect(json.data._links.category.href).to.match(new RegExp('/api/categories/' + categoryId + '$'));",
+                  "    pm.expect(json.data._links.reviews.href).to.include('/api/reviews?item_id=' + json.data.id);",
+                  "});",
+                  "pm.sendRequest(json.data._links.category.href, (error, response) => {",
+                  "    pm.test('following the category link returns the category', () => {",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "        pm.expect(response.json().data.id).to.eql(Number(categoryId));",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items/{{itemId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "08 UPDATE item (PATCH, only price and stock)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('price and stock changed, the rest stayed the same', () => {",
+                  "    pm.expect(json.data.price).to.eql(19.9);",
+                  "    pm.expect(json.data.stock).to.eql(0);",
+                  "    pm.expect(json.data.name).to.eql('Expandable Garden Hose 15 m');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items/{{itemId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 19.90,\n  \"stock\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reviews",
+      "description": "All 5 review methods. The new review is about the item created in 06.",
+      "item": [
+        {
+          "name": "09 LIST reviews (filter by item and rating)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('only reviews of item 1 rated 4 or 5', () => {",
+                  "    pm.expect(json.data.length).to.be.above(0);",
+                  "    json.data.forEach((review) => {",
+                  "        pm.expect(review.item_id).to.eql(1);",
+                  "        pm.expect(review.rating).to.be.at.least(4);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews?item_id=1&min_rating=4",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "10 CREATE review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Location header points to the new review', () => {",
+                  "    pm.expect(pm.response.headers.get('Location')).to.eql(json.data._links.self.href);",
+                  "});",
+                  "pm.test('the review is about the new item', () => {",
+                  "    pm.expect(json.data.item_id).to.eql(Number(pm.collectionVariables.get('itemId')));",
+                  "    pm.expect(json.data.item_name).to.eql('Expandable Garden Hose 15 m');",
+                  "});",
+                  "pm.test('the author is the logged-in user (from the token)', () => pm.expect(json.data.user_id).to.eql(Number(pm.collectionVariables.get('userId'))));",
+                  "pm.collectionVariables.set('reviewId', json.data.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"item_id\": {{itemId}},\n  \"author_name\": \"Ieva G.\",\n  \"rating\": 5,\n  \"comment\": \"Strong hose, no leaks after a month of daily watering.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "11 READ review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('returns the created review', () => {",
+                  "    pm.expect(json.data.id).to.eql(Number(pm.collectionVariables.get('reviewId')));",
+                  "    pm.expect(json.data.rating).to.eql(5);",
+                  "});",
+                  "pm.test('hypermedia: link to the reviewed item', () => {",
+                  "    pm.expect(json.data._links.item.href).to.match(new RegExp('/api/items/' + pm.collectionVariables.get('itemId') + '$'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews/{{reviewId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "12 UPDATE review (PUT)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('rating and comment are updated', () => {",
+                  "    pm.expect(json.data.rating).to.eql(4);",
+                  "    pm.expect(json.data.comment).to.eql('Still no leaks, but the nozzle broke after two months.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews/{{reviewId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"item_id\": {{itemId}},\n  \"author_name\": \"Ieva G.\",\n  \"rating\": 4,\n  \"comment\": \"Still no leaks, but the nozzle broke after two months.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "13 DELETE review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));",
+                  "pm.test('no response body', () => pm.expect(pm.response.text()).to.be.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews/{{reviewId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Authorization (roles and ownership)",
+      "item": [
+        {
+          "name": "Z1 GUEST reads items without a token (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK - guests can read', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items?per_page=1",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Z2 GUEST creates a review without a token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));",
+                  "pm.test('message is Unauthenticated.', () => pm.expect(pm.response.json().message).to.eql('Unauthenticated.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"item_id\": {{itemId}},\n  \"author_name\": \"Guest\",\n  \"rating\": 5,\n  \"comment\": \"Guests cannot post.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Z3 Request with a fake token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiJ9.fake-signature",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Z4 USER creates a category (403, admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/categories",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Not allowed {{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Z5 USER deletes a category (403, admin only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/categories/{{categoryId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Z6 OTHER USER updates someone else's item (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items/{{itemId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 0.99\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{otherUserToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Z7 OTHER USER deletes someone else's item (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items/{{itemId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{otherUserToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Z8 USER writes a review (owner = user from the token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('the review belongs to the logged-in user', () => pm.expect(json.data.user_id).to.eql(Number(pm.collectionVariables.get('userId'))));",
+                  "pm.collectionVariables.set('reviewId', json.data.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"item_id\": {{itemId}},\n  \"author_name\": \"Postman User\",\n  \"rating\": 4,\n  \"comment\": \"Works fine.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Z9 OTHER USER edits someone else's review (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews/{{reviewId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"item_id\": {{itemId}},\n  \"author_name\": \"Hacker\",\n  \"rating\": 1,\n  \"comment\": \"Changed by someone else.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{otherUserToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Z10 OTHER USER deletes someone else's review (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews/{{reviewId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{otherUserToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Z11 ADMIN edits any review (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('the comment was changed by the admin', () => pm.expect(pm.response.json().data.comment).to.eql('Edited by the admin.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews/{{reviewId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Edited by the admin.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Z12 ADMIN deletes any review (204)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews/{{reviewId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Delete",
+      "description": "DELETE the item and the category created above, so the collection can be run again and again.",
+      "item": [
+        {
+          "name": "14 DELETE item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));",
+                  "pm.test('no response body', () => pm.expect(pm.response.text()).to.be.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items/{{itemId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "15 DELETE category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));",
+                  "pm.test('no response body', () => pm.expect(pm.response.text()).to.be.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/categories/{{categoryId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "description": "One resource built from all three entities.",
+      "item": [
+        {
+          "name": "Dashboard (categories + items + reviews)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('built from categories, items and reviews', () => {",
+                  "    pm.expect(json.data).to.have.all.keys('totals', 'categories', 'top_rated_items', 'latest_reviews');",
+                  "    pm.expect(json.data.totals.categories).to.eql(json.data.categories.length);",
+                  "    pm.expect(json.data.top_rated_items[0]).to.include.keys('category_name', 'average_rating', 'reviews_count');",
+                  "    pm.expect(json.data.latest_reviews[0]).to.include.keys('item_name', 'rating', 'comment');",
+                  "});",
+                  "pm.test('hypermedia: links to every collection', () => {",
+                  "    pm.expect(json._links).to.have.all.keys('self', 'categories', 'items', 'reviews');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/dashboard",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error responses",
+      "description": "404, 422 and 400 answers.",
+      "item": [
+        {
+          "name": "404 - READ the deleted category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
+                  "pm.test('says which resource is missing', () => pm.expect(pm.response.json().message).to.eql('Category not found.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/categories/{{categoryId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "404 - UPDATE an item that does not exist",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
+                  "pm.test('says which resource is missing', () => pm.expect(pm.response.json().message).to.eql('Item not found.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items/999999",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 9.99\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "422 - CREATE item with invalid fields",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 Unprocessable Content', () => pm.response.to.have.status(422));",
+                  "pm.test('lists an error for every invalid field', () => {",
+                  "    pm.expect(pm.response.json().errors).to.have.all.keys('category_id', 'name', 'price', 'stock');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category_id\": 999999,\n  \"name\": \"\",\n  \"price\": -5,\n  \"stock\": 1.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "422 - CREATE review with rating 6",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 Unprocessable Content', () => pm.response.to.have.status(422));",
+                  "pm.test('explains the rating error', () => {",
+                  "    pm.expect(pm.response.json().errors.rating[0]).to.eql('The rating field must be between 1 and 5.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"item_id\": 1,\n  \"author_name\": \"Tomas K.\",\n  \"rating\": 6,\n  \"comment\": \"Better than perfect!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "422 - LIST items with an invalid filter",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 Unprocessable Content', () => pm.response.to.have.status(422));",
+                  "pm.test('lists the invalid query parameters', () => {",
+                  "    pm.expect(pm.response.json().errors).to.have.all.keys('min_price', 'per_page');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items?min_price=cheap&per_page=500",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "400 - CREATE category with malformed JSON",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('explains that the JSON is broken', () => pm.expect(pm.response.json().message).to.include('Malformed JSON'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/categories",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Broken JSON\",\n  \"description\": \"the closing brace is missing\"\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Logout",
+      "item": [
+        {
+          "name": "L1 LOGOUT the user (204)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/logout",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "L2 Use the access token after logout (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized - the access token no longer works', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/reviews",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "L3 Use the refresh token after logout (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized - the refresh token no longer works', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/refresh",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{userRefreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "L4 LOGOUT without a token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/logout",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

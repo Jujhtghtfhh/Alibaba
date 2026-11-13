@@ -1,0 +1,692 @@
+openapi: 3.0.3
+info:
+  title: Aligaga Shop API
+  version: 1.0.0
+  description: |
+    REST API of **Aligaga**, a small AliExpress-like shop.
+
+    The shop has three related resources: **Category → Item → Review**
+    (a category has many items, an item has many reviews).
+    Every resource has 5 methods: LIST, CREATE, READ, UPDATE (PUT or PATCH) and DELETE.
+    `GET /dashboard` returns a shop overview built from all three resources.
+
+    **Conventions**
+    - Request and response bodies are JSON (`Content-Type: application/json`).
+    - Lists are paginated with `page` and `per_page` (default 10, maximum 100).
+    - Every resource has `_links` (hypermedia) with the URLs and HTTP methods of what can be done next.
+    - `POST` returns `201 Created` with a `Location` header; `DELETE` returns `204 No Content` without a body.
+    - `400` = the body is not valid JSON, `404` = the resource does not exist,
+      `422` = the JSON is valid but breaks the validation rules (the `errors` object says which fields).
+servers:
+  - url: /api
+    description: The server that serves this page
+
+tags:
+  - name: Categories
+    description: Item categories, e.g. Electronics or Fashion.
+  - name: Items
+    description: Products that are sold in a category.
+  - name: Reviews
+    description: Customer reviews of an item, rated 1 to 5.
+  - name: Dashboard
+    description: Shop overview built from categories, items and reviews.
+
+paths:
+  /categories:
+    get:
+      tags: [Categories]
+      operationId: listCategories
+      summary: List categories
+      description: Categories sorted by name, with the number of items in each.
+      parameters:
+        - name: search
+          in: query
+          description: Only categories whose name contains this text.
+          schema: { type: string, maxLength: 100 }
+          example: elect
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: One page of categories.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoryList' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [Categories]
+      operationId: createCategory
+      summary: Create a category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+            example: { name: Garden, description: 'Tools, plants and decor for gardens and balconies.' }
+      responses:
+        '201':
+          description: The category was created.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoryResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /categories/{categoryId}:
+    parameters:
+      - $ref: '#/components/parameters/CategoryId'
+    get:
+      tags: [Categories]
+      operationId: getCategory
+      summary: Get one category
+      responses:
+        '200':
+          description: The category.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoryResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Categories]
+      operationId: replaceCategory
+      summary: Update a category (send the whole category)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+            example: { name: Garden & Patio, description: Everything for outdoor living. }
+      responses:
+        '200':
+          description: The updated category.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoryResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Categories]
+      operationId: updateCategory
+      summary: Update a category (send only the fields that change)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryFields' }
+            example: { description: Everything for outdoor living. }
+      responses:
+        '200':
+          description: The updated category.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoryResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Categories]
+      operationId: deleteCategory
+      summary: Delete a category
+      description: The category's items and their reviews are deleted too.
+      responses:
+        '204':
+          description: The category was deleted. The response has no body.
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /items:
+    get:
+      tags: [Items]
+      operationId: listItems
+      summary: List items
+      description: Items sorted by id, with their category name and review statistics. All filters can be combined.
+      parameters:
+        - name: category_id
+          in: query
+          description: Only items of this category.
+          schema: { type: integer }
+          example: 1
+        - name: search
+          in: query
+          description: Only items whose name contains this text.
+          schema: { type: string, maxLength: 100 }
+          example: usb
+        - name: min_price
+          in: query
+          description: Only items that cost at least this much.
+          schema: { type: number, minimum: 0 }
+          example: 10
+        - name: max_price
+          in: query
+          description: Only items that cost at most this much.
+          schema: { type: number, minimum: 0 }
+          example: 30
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: One page of items.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemList' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [Items]
+      operationId: createItem
+      summary: Create an item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ItemInput' }
+            example:
+              category_id: 1
+              name: Mechanical Keyboard 87 Keys
+              description: Hot-swappable mechanical keyboard with RGB backlight.
+              price: 42.5
+              stock: 75
+      responses:
+        '201':
+          description: The item was created.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /items/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    get:
+      tags: [Items]
+      operationId: getItem
+      summary: Get one item
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Items]
+      operationId: replaceItem
+      summary: Update an item (send the whole item)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ItemInput' }
+            example:
+              category_id: 1
+              name: Wireless Bluetooth 5.3 Earbuds
+              description: True wireless earbuds with touch controls.
+              price: 13.99
+              stock: 400
+      responses:
+        '200':
+          description: The updated item.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Items]
+      operationId: updateItem
+      summary: Update an item (send only the fields that change)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ItemFields' }
+            example: { price: 13.99, stock: 0 }
+      responses:
+        '200':
+          description: The updated item.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Items]
+      operationId: deleteItem
+      summary: Delete an item
+      description: The item's reviews are deleted too.
+      responses:
+        '204':
+          description: The item was deleted. The response has no body.
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /reviews:
+    get:
+      tags: [Reviews]
+      operationId: listReviews
+      summary: List reviews
+      description: Reviews with the newest first. All filters can be combined.
+      parameters:
+        - name: item_id
+          in: query
+          description: Only reviews of this item.
+          schema: { type: integer }
+          example: 1
+        - name: min_rating
+          in: query
+          description: Only reviews rated at least this much.
+          schema: { type: integer, minimum: 1, maximum: 5 }
+          example: 4
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: One page of reviews.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewList' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    post:
+      tags: [Reviews]
+      operationId: createReview
+      summary: Create a review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewInput' }
+            example:
+              item_id: 1
+              author_name: Ieva G.
+              rating: 5
+              comment: Comfortable earbuds, the battery easily lasts a whole workday.
+      responses:
+        '201':
+          description: The review was created.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /reviews/{reviewId}:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      tags: [Reviews]
+      operationId: getReview
+      summary: Get one review
+      responses:
+        '200':
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Reviews]
+      operationId: replaceReview
+      summary: Update a review (send the whole review)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewInput' }
+            example:
+              item_id: 1
+              author_name: Tomas K.
+              rating: 4
+              comment: Still great after a month, but the case scratches easily.
+      responses:
+        '200':
+          description: The updated review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    patch:
+      tags: [Reviews]
+      operationId: updateReview
+      summary: Update a review (send only the fields that change)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewFields' }
+            example: { rating: 4 }
+      responses:
+        '200':
+          description: The updated review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Reviews]
+      operationId: deleteReview
+      summary: Delete a review
+      responses:
+        '204':
+          description: The review was deleted. The response has no body.
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /dashboard:
+    get:
+      tags: [Dashboard]
+      operationId: getDashboard
+      summary: Shop overview
+      description: |
+        One response built from all three resources: shop totals, every category with its item count,
+        the 5 best rated items and the 5 newest reviews.
+      responses:
+        '200':
+          description: The shop overview.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dashboard' }
+
+components:
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Page number.
+      schema: { type: integer, minimum: 1, default: 1 }
+    PerPage:
+      name: per_page
+      in: query
+      description: How many results one page has.
+      schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      description: Category id.
+      schema: { type: integer }
+      example: 1
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      description: Item id.
+      schema: { type: integer }
+      example: 1
+    ReviewId:
+      name: reviewId
+      in: path
+      required: true
+      description: Review id.
+      schema: { type: integer }
+      example: 1
+
+  headers:
+    Location:
+      description: URL of the created resource.
+      schema: { type: string, format: uri }
+      example: http://localhost:8000/api/categories/7
+
+  responses:
+    BadRequest:
+      description: The request body is not valid JSON.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { message: 'Malformed JSON in the request body: Syntax error.' }
+    NotFound:
+      description: The resource does not exist.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { message: Category not found. }
+    ValidationFailed:
+      description: The JSON is valid, but some fields break the validation rules.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationError' }
+          example:
+            message: The name field is required. (and 1 more error)
+            errors:
+              name: [The name field is required.]
+              price: [The price field must be at least 0.01.]
+
+  schemas:
+    Link:
+      type: object
+      description: A hypermedia link - where to send the request and with which HTTP method.
+      properties:
+        href: { type: string, format: uri, example: 'http://localhost:8000/api/categories/1' }
+        method: { type: string, enum: [GET, POST, PUT, PATCH, DELETE], example: GET }
+
+    CategoryFields:
+      type: object
+      properties:
+        name: { type: string, maxLength: 100, description: Unique category name., example: Electronics }
+        description: { type: string, nullable: true, maxLength: 1000, example: 'Phones accessories, audio, chargers and smart gadgets for everyday use.' }
+    CategoryInput:
+      allOf:
+        - $ref: '#/components/schemas/CategoryFields'
+      required: [name]
+    Category:
+      type: object
+      properties:
+        id: { type: integer, example: 1 }
+        name: { type: string, example: Electronics }
+        description: { type: string, nullable: true, example: 'Phones accessories, audio, chargers and smart gadgets for everyday use.' }
+        items_count: { type: integer, description: How many items the category has., example: 4 }
+        created_at: { type: string, format: date-time, example: '2026-03-26T14:10:56.000000Z' }
+        updated_at: { type: string, format: date-time, example: '2026-03-26T14:10:56.000000Z' }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/Link' }
+            update: { $ref: '#/components/schemas/Link' }
+            delete: { $ref: '#/components/schemas/Link' }
+            items: { $ref: '#/components/schemas/Link' }
+          example:
+            self: { href: 'http://localhost:8000/api/categories/1', method: GET }
+            update: { href: 'http://localhost:8000/api/categories/1', method: PUT }
+            delete: { href: 'http://localhost:8000/api/categories/1', method: DELETE }
+            items: { href: 'http://localhost:8000/api/items?category_id=1', method: GET }
+    CategoryResponse:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/Category' }
+    CategoryList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Category' }
+        links: { $ref: '#/components/schemas/PaginationLinks' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    ItemFields:
+      type: object
+      properties:
+        category_id: { type: integer, description: Id of an existing category., example: 1 }
+        name: { type: string, maxLength: 255, example: Wireless Bluetooth 5.3 Earbuds }
+        description: { type: string, nullable: true, maxLength: 2000, example: True wireless earbuds with touch controls. }
+        price: { type: number, minimum: 0.01, maximum: 999999.99, description: Price in EUR with at most 2 decimals., example: 15.99 }
+        stock: { type: integer, minimum: 0, maximum: 1000000, description: How many units are available., example: 420 }
+    ItemInput:
+      allOf:
+        - $ref: '#/components/schemas/ItemFields'
+      required: [category_id, name, price, stock]
+    Item:
+      type: object
+      properties:
+        id: { type: integer, example: 1 }
+        category_id: { type: integer, example: 1 }
+        category_name: { type: string, example: Electronics }
+        name: { type: string, example: Wireless Bluetooth 5.3 Earbuds }
+        description: { type: string, nullable: true, example: 'True wireless earbuds with touch controls, 30 hours of battery life with the charging case and IPX5 splash resistance.' }
+        price: { type: number, example: 15.99 }
+        stock: { type: integer, example: 420 }
+        reviews_count: { type: integer, example: 3 }
+        average_rating: { type: number, nullable: true, description: 'Average review rating, null when the item has no reviews.', example: 4 }
+        created_at: { type: string, format: date-time, example: '2026-06-09T00:52:24.000000Z' }
+        updated_at: { type: string, format: date-time, example: '2026-06-09T00:52:24.000000Z' }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/Link' }
+            update: { $ref: '#/components/schemas/Link' }
+            delete: { $ref: '#/components/schemas/Link' }
+            category: { $ref: '#/components/schemas/Link' }
+            reviews: { $ref: '#/components/schemas/Link' }
+          example:
+            self: { href: 'http://localhost:8000/api/items/1', method: GET }
+            update: { href: 'http://localhost:8000/api/items/1', method: PUT }
+            delete: { href: 'http://localhost:8000/api/items/1', method: DELETE }
+            category: { href: 'http://localhost:8000/api/categories/1', method: GET }
+            reviews: { href: 'http://localhost:8000/api/reviews?item_id=1', method: GET }
+    ItemResponse:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/Item' }
+    ItemList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Item' }
+        links: { $ref: '#/components/schemas/PaginationLinks' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    ReviewFields:
+      type: object
+      properties:
+        item_id: { type: integer, description: Id of an existing item., example: 1 }
+        author_name: { type: string, maxLength: 100, example: Tomas K. }
+        rating: { type: integer, minimum: 1, maximum: 5, example: 5 }
+        comment: { type: string, maxLength: 2000, example: Great sound for the price. Arrived in Vilnius after 9 days. }
+    ReviewInput:
+      allOf:
+        - $ref: '#/components/schemas/ReviewFields'
+      required: [item_id, author_name, rating, comment]
+    Review:
+      type: object
+      properties:
+        id: { type: integer, example: 1 }
+        item_id: { type: integer, example: 1 }
+        item_name: { type: string, example: Wireless Bluetooth 5.3 Earbuds }
+        author_name: { type: string, example: Tomas K. }
+        rating: { type: integer, example: 5 }
+        comment: { type: string, example: Great sound for the price and the case charges over USB-C. Arrived in Vilnius after 9 days. }
+        created_at: { type: string, format: date-time, example: '2026-07-12T15:41:08.000000Z' }
+        updated_at: { type: string, format: date-time, example: '2026-07-12T15:41:08.000000Z' }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/Link' }
+            update: { $ref: '#/components/schemas/Link' }
+            delete: { $ref: '#/components/schemas/Link' }
+            item: { $ref: '#/components/schemas/Link' }
+          example:
+            self: { href: 'http://localhost:8000/api/reviews/1', method: GET }
+            update: { href: 'http://localhost:8000/api/reviews/1', method: PUT }
+            delete: { href: 'http://localhost:8000/api/reviews/1', method: DELETE }
+            item: { href: 'http://localhost:8000/api/items/1', method: GET }
+    ReviewResponse:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/Review' }
+    ReviewList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Review' }
+        links: { $ref: '#/components/schemas/PaginationLinks' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    Dashboard:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            totals:
+              type: object
+              properties:
+                categories: { type: integer, example: 6 }
+                items: { type: integer, example: 24 }
+                items_out_of_stock: { type: integer, example: 1 }
+                reviews: { type: integer, example: 60 }
+                average_rating: { type: number, example: 4.1 }
+            categories:
+              type: array
+              items: { $ref: '#/components/schemas/Category' }
+            top_rated_items:
+              type: array
+              items: { $ref: '#/components/schemas/Item' }
+            latest_reviews:
+              type: array
+              items: { $ref: '#/components/schemas/Review' }
+        _links:
+          type: object
+          properties:
+            self: { $ref: '#/components/schemas/Link' }
+            categories: { $ref: '#/components/schemas/Link' }
+            items: { $ref: '#/components/schemas/Link' }
+            reviews: { $ref: '#/components/schemas/Link' }
+          example:
+            self: { href: 'http://localhost:8000/api/dashboard', method: GET }
+            categories: { href: 'http://localhost:8000/api/categories', method: GET }
+            items: { href: 'http://localhost:8000/api/items', method: GET }
+            reviews: { href: 'http://localhost:8000/api/reviews', method: GET }
+
+    PaginationLinks:
+      type: object
+      description: Hypermedia links to the other pages; null when there is no such page.
+      properties:
+        first: { type: string, format: uri, example: 'http://localhost:8000/api/items?page=1' }
+        last: { type: string, format: uri, example: 'http://localhost:8000/api/items?page=3' }
+        prev: { type: string, format: uri, nullable: true, example: null }
+        next: { type: string, format: uri, nullable: true, example: 'http://localhost:8000/api/items?page=2' }
+    PaginationMeta:
+      type: object
+      properties:
+        current_page: { type: integer, example: 1 }
+        from: { type: integer, nullable: true, example: 1 }
+        last_page: { type: integer, example: 3 }
+        links:
+          type: array
+          description: Links for drawing page buttons.
+          items:
+            type: object
+            properties:
+              url: { type: string, format: uri, nullable: true }
+              label: { type: string }
+              page: { type: integer, nullable: true }
+              active: { type: boolean }
+        path: { type: string, format: uri, example: 'http://localhost:8000/api/items' }
+        per_page: { type: integer, example: 10 }
+        to: { type: integer, nullable: true, example: 10 }
+        total: { type: integer, example: 24 }
+
+    Error:
+      type: object
+      properties:
+        message: { type: string, example: Item not found. }
+    ValidationError:
+      type: object
+      properties:
+        message: { type: string, example: The name field is required. }
+        errors:
+          type: object
+          description: For every invalid field, the list of its error messages.
+          additionalProperties:
+            type: array
+            items: { type: string }
